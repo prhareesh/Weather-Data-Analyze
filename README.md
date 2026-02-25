@@ -1,506 +1,141 @@
-A Spring Boot application that processes 20 years of Delhi weather forecast data from CSV files using **Spring Batch**, stores it in a relational database, and exposes REST APIs for filtering and analytics.
+# Securin Weather Data API
 
----
+Spring Boot backend for uploading and querying Delhi weather data from CSV files.
 
-## 🚀 Features
+## What This Project Does
 
-### ✅ Data Processing
+- Uploads weather CSV files and stores parsed rows in a relational database.
+- Exposes APIs to:
+  - fetch weather details by exact date,
+  - fetch weather details by month across all years,
+  - fetch monthly temperature stats (min, max, median) for a given year.
 
-* Upload large CSV weather dataset
-* Chunk-based processing using Spring Batch
-* Transaction-safe database insertion
-* Handles null & malformed values gracefully
+## Tech Stack
 
-### ✅ Weather APIs
+- Java 17
+- Spring Boot 4.0.3
+- Spring Web
+- Spring Data JPA
+- MySQL Connector/J
+- Springdoc OpenAPI (Swagger UI)
+- Lombok
+- H2 (runtime/testing utility)
 
-* Retrieve weather details by specific date
-* Retrieve weather data for a specific month (across all years)
-* Extract monthly temperature statistics (min, max, median) for any year
+## Project Structure
 
-### ✅ Clean Architecture
+- `src/main/java/com/timesync/securin/controller` : REST endpoints
+- `src/main/java/com/timesync/securin/service` : service contracts and implementation
+- `src/main/java/com/timesync/securin/service/ingestion` : CSV parsing and ingestion logic
+- `src/main/java/com/timesync/securin/repository` : JPA repository layer
+- `src/main/java/com/timesync/securin/entity` : JPA entities
+- `src/main/java/com/timesync/securin/dto` : API response DTOs
 
-* Layered modular design
-* DTO-based API responses
-* Centralized CommonResponse wrapper
-* Batch job configuration with JobLauncher
+## Configuration
 
----
+Default app settings are in `src/main/resources/application.properties`.
 
-# 🏗 Tech Stack
+By default, it uses MySQL:
 
-| Technology        | Version |
-| ----------------- | ------- |
-| Java              | 17      |
-| Spring Boot       | 4.0.0   |
-| Spring Batch      | 5.x     |
-| Spring Data JPA   | ✔       |
-| MySQL             | ✔       |
-| Lombok            | ✔       |
-| Swagger (OpenAPI) | ✔       |
+- `DB_URL` (default: `jdbc:mysql://localhost:3306/securin`)
+- `DB_USERNAME` (default: `root`)
+- `DB_PASSWORD` (default: `1234`)
+- `DB_DRIVER` (default: `com.mysql.cj.jdbc.Driver`)
 
----
+Server runs on port `8081`.
 
-# 📂 Project Structure
+## Run Locally
 
-```
-com.timesync.securin
- ├── batch
- │     └── BatchConfig.java
- ├── controller
- │     └── WeatherController.java
- ├── service
- │     ├── WeatherService.java
- │     └── serviceImpl
- │           └── WeatherServiceImpl.java
- ├── repository
- │     └── WeatherRepository.java
- ├── entity
- │     └── WeatherData.java
- ├── dto
- │     ├── WeatherResponse.java
- │     ├── MonthlyStats.java
- │     └── CommonResponse.java
-```
-
----
-
-# ⚙️ Setup Instructions
-
-## 1️⃣ Clone the Repository
-
-```bash
-git clone https://github.com/your-username/weather-data.git
-cd weather-data
-```
-
----
-
-## 2️⃣ Configure Database
-
-Create database:
+1. Create database:
 
 ```sql
-CREATE DATABASE weather_db;
+CREATE DATABASE securin;
 ```
 
-Update `src/main/resources/application.properties`:
-
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/weather_db
-spring.datasource.username=root
-spring.datasource.password=yourpassword
-
-spring.jpa.hibernate.ddl-auto=update
-spring.batch.jdbc.initialize-schema=always
-```
-
----
-
-## 3️⃣ Build and Run
+2. Start application:
 
 ```bash
-mvn clean install
-mvn spring-boot:run
+./mvnw spring-boot:run
 ```
 
-Application runs at:
+(Windows PowerShell: `mvnw spring-boot:run`)
 
-```
-http://localhost:8080
-```
+3. Swagger UI:
 
----
+- `http://localhost:8081/swagger-ui/index.html`
 
-# 📤 CSV Upload API
+## CSV Format Expected
 
-### Upload Weather Dataset
+The upload parser expects a 20-column CSV with a header similar to:
 
-```
-POST /api/weather/upload
+```csv
+datetime_utc,_conds,_dewptm,_fog,_hail,_heatindexm,_hum,_precipm,_pressurem,_rain,_snow,_tempm,_thunder,_tornado,_vism,_wdird,_wdire,_wgustm,_windchillm,_wspdm
 ```
 
-**Request Type:** `multipart/form-data`
+Important parser rules:
 
-| Key  | Type | Value           |
-| ---- | ---- | --------------- |
-| file | File | weatherdata.csv |
+- Date-time format: `yyyyMMdd-HH:mm` (example: `19961101-11:00`)
+- `-9999` and empty numeric values are treated as `null`
+- Non-CSV files are rejected
 
----
+## API Endpoints
 
-# 🌡 API Endpoints
+Base path: `/api/weather`
 
----
+1. Upload CSV
 
-## 🔹 Get Weather by Date
+- `POST /api/weather/upload`
+- Content type: `multipart/form-data`
+- Form field: `file`
 
-```
-GET /api/weather/date?date=2012-05-10
-```
-
-Returns:
-
-* Weather condition
-* Temperature
-* Humidity
-* Pressure
-
----
-
-## 🔹 Get Weather by Month (Across All Years)
-
-```
-GET /api/weather/month?month=5
-```
-
-Returns all May records across dataset.
-
----
-
-## 🔹 Get Monthly Temperature Statistics
-
-```
-GET /api/weather/stats?year=2015
-```
-
-Returns for each month:
-
-* Minimum temperature
-* Maximum temperature
-* Median temperature
-
----
-
-# 🧠 How Batch Processing Works
-
-1. CSV uploaded via REST endpoint
-2. File saved temporarily
-3. JobLauncher triggers Spring Batch Job
-4. FlatFileItemReader reads CSV
-5. FieldSetMapper converts rows into WeatherData entities
-6. JpaItemWriter persists data in chunks
-7. Batch metadata stored in BATCH_* tables
-
----
-
-# 📊 Median Calculation
-
-Median temperature is calculated in the service layer because:
-
-* MySQL does not provide native MEDIAN aggregation
-* Ensures database portability
-* Avoids vendor-specific SQL
-
----
-
-# 🔒 Validation & Error Handling
-
-* File type validation (.csv only)
-* Null-safe parsing for numeric values
-* Structured API responses using CommonResponse
-* Prevents duplicate job execution via timestamp parameter
-
----
-
-# 📖 API Documentation
-
-Swagger UI available at:
-
-```
-http://localhost:8080/swagger-ui.html
-```
-
----
-
-# 📈 Future Enhancements
-
-* Pagination & sorting support
-* Async batch execution
-* Job status monitoring endpoint
-* Redis caching
-* Docker containerization
-* Cloud storage integration
-
----
-
-# 👨‍💻 Author
-
-Developed as part of a backend technical assessment for weather data processing and analytics.
-
----
-
-# 🏆 Summary
-
-This project demonstrates:
-
-* Batch processing of large datasets
-* REST API development
-* Clean architecture principles
-* Statistical data computation
-* Enterprise-level backend design using Spring Boot
-
----
-
-If you'd like, I can also generate:
-
-* 🔥 A professional project description for LinkedIn
-* 🔥 A GitHub repository description (short version)
-* 🔥 A Dockerfile
-* 🔥 A Postman collection
-* 🔥 A production-level README with architecture diagrams
-
-Just tell me what you need 😎
-Perfect 👌
-Below is a **clean, professional, GitHub-friendly README.md** — formatted properly for GitHub with badges, sections, and clean Markdown.
-
-You can copy this directly into your project root as:
-
-```
-README.md
-```
-
----
-
-# 🌦 Weather Data Processing & Analytics API
-
-![Java](https://img.shields.io/badge/Java-17-orange)
-![Spring Boot](https://img.shields.io/badge/Spring%20Boot-3.3.x-brightgreen)
-![Spring Batch](https://img.shields.io/badge/Spring%20Batch-5.x-blue)
-![MySQL](https://img.shields.io/badge/MySQL-Database-blue)
-![License](https://img.shields.io/badge/License-MIT-lightgrey)
-
-A Spring Boot application that processes 20 years of Delhi weather forecast data from CSV files using **Spring Batch**, stores it in a relational database, and exposes REST APIs for filtering and analytics.
-
----
-
-## 🚀 Features
-
-### ✅ Data Processing
-
-* Upload large CSV weather dataset
-* Chunk-based processing using Spring Batch
-* Transaction-safe database insertion
-* Handles null & malformed values gracefully
-
-### ✅ Weather APIs
-
-* Retrieve weather details by specific date
-* Retrieve weather data for a specific month (across all years)
-* Extract monthly temperature statistics (min, max, median) for any year
-
-### ✅ Clean Architecture
-
-* Layered modular design
-* DTO-based API responses
-* Centralized CommonResponse wrapper
-* Batch job configuration with JobLauncher
-
----
-
-# 🏗 Tech Stack
-
-| Technology        | Version |
-| ----------------- | ------- |
-| Java              | 17      |
-| Spring Boot       | 3.3.x   |
-| Spring Batch      | 5.x     |
-| Spring Data JPA   | ✔       |
-| MySQL             | ✔       |
-| Lombok            | ✔       |
-| Swagger (OpenAPI) | ✔       |
-
----
-
-# 📂 Project Structure
-
-```
-com.timesync.securin
- ├── batch
- │     └── BatchConfig.java
- ├── controller
- │     └── WeatherController.java
- ├── service
- │     ├── WeatherService.java
- │     └── serviceImpl
- │           └── WeatherServiceImpl.java
- ├── repository
- │     └── WeatherRepository.java
- ├── entity
- │     └── WeatherData.java
- ├── dto
- │     ├── WeatherResponse.java
- │     ├── MonthlyStats.java
- │     └── CommonResponse.java
-```
-
----
-
-# ⚙️ Setup Instructions
-
-## 1️⃣ Clone the Repository
+Example cURL:
 
 ```bash
-git clone https://github.com/your-username/weather-data.git
-cd weather-data
+curl -X POST "http://localhost:8081/api/weather/upload" \
+  -F "file=@testset.csv"
 ```
 
----
+2. Get weather by date
 
-## 2️⃣ Configure Database
+- `GET /api/weather/date?date=1996-11-01`
+- Returns weather condition, temperature, humidity, pressure for records on that date.
 
-Create database:
+3. Get weather by month (all years)
 
-```sql
-CREATE DATABASE weather_db;
-```
+- `GET /api/weather/month?month=11`
 
-Update `src/main/resources/application.properties`:
+4. Get yearly monthly temperature stats
 
-```properties
-spring.datasource.url=jdbc:mysql://localhost:3306/weather_db
-spring.datasource.username=root
-spring.datasource.password=yourpassword
+- `GET /api/weather/stats?year=1996`
+- For each available month in that year, returns:
+  - `minTemperature`
+  - `maxTemperature`
+  - `medianTemperature`
 
-spring.jpa.hibernate.ddl-auto=update
-spring.batch.jdbc.initialize-schema=always
-```
+## Response Contract
 
----
+All endpoints return a common wrapper:
 
-## 3️⃣ Build and Run
+- `status` (`SUCCESS` / `FAILURE`)
+- `errorMessage`
+- `successMessage`
+- `data`
+- `code`
+
+## Notes
+
+- Upload currently replaces existing data (`deleteAllInBatch`) before inserting new rows.
+- If upload parses zero rows, API returns failure with a format hint.
+
+## Build and Test
 
 ```bash
-mvn clean install
-mvn spring-boot:run
+./mvnw test
+./mvnw clean package
 ```
 
-Application runs at:
+## Future Improvements
 
-```
-http://localhost:8080
-```
-
----
-
-# 📤 CSV Upload API
-
-### Upload Weather Dataset
-
-```
-POST /api/weather/upload
-```
-
-**Request Type:** `multipart/form-data`
-
-| Key  | Type | Value           |
-| ---- | ---- | --------------- |
-| file | File | weatherdata.csv |
-
----
-
-# 🌡 API Endpoints
-
----
-
-## 🔹 Get Weather by Date
-
-```
-GET /api/weather/date?date=2012-05-10
-```
-
-Returns:
-
-* Weather condition
-* Temperature
-* Humidity
-* Pressure
-
----
-
-## 🔹 Get Weather by Month (Across All Years)
-
-```
-GET /api/weather/month?month=5
-```
-
-Returns all May records across dataset.
-
----
-
-## 🔹 Get Monthly Temperature Statistics
-
-```
-GET /api/weather/stats?year=2015
-```
-
-Returns for each month:
-
-* Minimum temperature
-* Maximum temperature
-* Median temperature
-
----
-
-# 🧠 How Batch Processing Works
-
-1. CSV uploaded via REST endpoint
-2. File saved temporarily
-3. JobLauncher triggers Spring Batch Job
-4. FlatFileItemReader reads CSV
-5. FieldSetMapper converts rows into WeatherData entities
-6. JpaItemWriter persists data in chunks
-7. Batch metadata stored in BATCH_* tables
-
----
-
-# 📊 Median Calculation
-
-Median temperature is calculated in the service layer because:
-
-* MySQL does not provide native MEDIAN aggregation
-* Ensures database portability
-* Avoids vendor-specific SQL
-
----
-
-# 🔒 Validation & Error Handling
-
-* File type validation (.csv only)
-* Null-safe parsing for numeric values
-* Structured API responses using CommonResponse
-* Prevents duplicate job execution via timestamp parameter
-
----
-
-# 📖 API Documentation
-
-Swagger UI available at:
-
-```
-http://localhost:8080/swagger-ui.html
-```
-
----
-
-# 📈 Future Enhancements
-
-* Pagination & sorting support
-* Async batch execution
-* Job status monitoring endpoint
-* Redis caching
-* Docker containerization
-* Cloud storage integration
-
-
-
----
-
-# 🏆 Summary
-
-This project demonstrates:
-
-* Batch processing of large datasets
-* REST API development
-* Clean architecture principles
-* Statistical data computation
-* Enterprise-level backend design using Spring Boot
-
+- Add pagination for `/month` and `/date`
+- Add row-level ingest error report (skipped row count + reasons)
+- Add integration tests for upload and query endpoints
+- Optional: switch to a dedicated CSV library if input format becomes complex (quoted commas, multiline fields)
