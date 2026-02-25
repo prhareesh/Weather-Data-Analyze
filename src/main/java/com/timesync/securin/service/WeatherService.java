@@ -1,7 +1,18 @@
 package com.timesync.securin.service;
 
-import org.springframework.stereotype.Service;
+import com.timesync.securin.dto.CommonResponse;
+import org.springframework.web.multipart.MultipartFile;
 
-@Service
+import java.time.LocalDate;
+
+
 public interface WeatherService {
+
+    CommonResponse upload(MultipartFile file);
+    CommonResponse getByDate(LocalDate date);
+
+    CommonResponse getByMonth(Integer month);
+
+    CommonResponse getYearlyStats(Integer year);
+
 }
