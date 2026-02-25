@@ -7,70 +7,56 @@ import com.timesync.securin.entity.ResponseStatus;
 import com.timesync.securin.entity.WeatherData;
 import com.timesync.securin.repository.WeatherRepository;
 import com.timesync.securin.service.WeatherService;
+import com.timesync.securin.service.ingestion.WeatherIngestionService;
 import lombok.RequiredArgsConstructor;
-import org.springframework.batch.core.job.Job;
-import org.springframework.batch.core.job.parameters.JobParameters;
-import org.springframework.batch.core.job.parameters.JobParametersBuilder;
-import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
-import java.io.IOException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Objects;
-import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
 public class WeatherServiceImpl implements WeatherService {
 
-    private final JobLauncher jobLauncher;
-    private final Job weatherJob;
+    private final WeatherIngestionService ingestionService;
     private final WeatherRepository repository;
 
     @Override
     public CommonResponse upload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            return CommonResponse.builder()
+                    .errorMessage("Please upload a CSV file")
+                    .code(400)
+                    .status(ResponseStatus.FAILURE)
+                    .build();
+        }
+
+        String originalName = file.getOriginalFilename();
+        if (originalName == null || !originalName.toLowerCase().endsWith(".csv")) {
+            return CommonResponse.builder()
+                    .errorMessage("Only .csv files are supported")
+                    .code(400)
+                    .status(ResponseStatus.FAILURE)
+                    .build();
+        }
 
         try {
-
-            if (file == null || file.isEmpty()) {
+            int recordsSaved = ingestionService.ingest(file);
+            if (recordsSaved == 0) {
                 return CommonResponse.builder()
-                        .errorMessage("Please Insert a file")
+                        .errorMessage("Upload parsed 0 rows. Check CSV format/header.")
                         .code(400)
                         .status(ResponseStatus.FAILURE)
                         .build();
             }
-
-            String uploadDir = System.getProperty("user.dir") + File.separator + "uploads";
-            File directory = new File(uploadDir);
-            if (!directory.exists()) {
-                directory.mkdirs();
-            }
-
-            String fileName = UUID.randomUUID() + "_" + file.getOriginalFilename();
-            String filePath = uploadDir + File.separator + fileName;
-
-            File dest = new File(filePath);
-            file.transferTo(dest);
-
-            JobParameters params = new JobParametersBuilder()
-                    .addString("filePath", filePath)
-                    .addLong("time", System.currentTimeMillis())
-                    .toJobParameters();
-
-            jobLauncher.run(weatherJob, params);
-
             return CommonResponse.builder()
-                    .successMessage("Upload Success")
+                    .successMessage("Upload successful. Records stored: " + recordsSaved)
                     .code(200)
                     .status(ResponseStatus.SUCCESS)
                     .build();
-
         } catch (Exception e) {
-            e.printStackTrace();
             return CommonResponse.builder()
                     .errorMessage("Upload failed: " + e.getMessage())
                     .code(500)
@@ -81,6 +67,13 @@ public class WeatherServiceImpl implements WeatherService {
 
     @Override
     public CommonResponse getByDate(LocalDate date) {
+        if (date == null) {
+            return CommonResponse.builder()
+                    .status(ResponseStatus.FAILURE)
+                    .errorMessage("Date is required. Format: yyyy-MM-dd")
+                    .code(400)
+                    .build();
+        }
 
         List<WeatherResponse> result =
                 repository.findByDateTimeBetween(
@@ -101,8 +94,7 @@ public class WeatherServiceImpl implements WeatherService {
 
     @Override
     public CommonResponse getByMonth(Integer month) {
-
-        if (month < 1 || month > 12) {
+        if (month == null || month < 1 || month > 12) {
             return CommonResponse.builder()
                     .status(ResponseStatus.FAILURE)
                     .errorMessage("Invalid month. Must be between 1 and 12")
@@ -111,7 +103,7 @@ public class WeatherServiceImpl implements WeatherService {
         }
 
         List<WeatherResponse> result =
-                repository.findByMonth(month)
+                repository.findAllByMonth(month)
                         .stream()
                         .map(this::mapToDTO)
                         .toList();
@@ -126,19 +118,21 @@ public class WeatherServiceImpl implements WeatherService {
 
     @Override
     public CommonResponse getYearlyStats(Integer year) {
+        if (year == null) {
+            return CommonResponse.builder()
+                    .status(ResponseStatus.FAILURE)
+                    .errorMessage("Year is required")
+                    .code(400)
+                    .build();
+        }
 
         List<MonthlyStats> statsList = new ArrayList<>();
 
         for (int month = 1; month <= 12; month++) {
-
-            List<Double> temps = repository.findByYearAndMonth(year, month)
-                    .stream()
-                    .map(WeatherData::getTemperature)
-                    .filter(Objects::nonNull)  // IMPORTANT
-                    .sorted()
-                    .toList();
-
-            if (temps.isEmpty()) continue;
+            List<Double> temps = repository.findSortedTemperaturesByYearAndMonth(year, month);
+            if (temps.isEmpty()) {
+                continue;
+            }
 
             double min = temps.get(0);
             double max = temps.get(temps.size() - 1);
@@ -146,14 +140,12 @@ public class WeatherServiceImpl implements WeatherService {
             double median;
             int size = temps.size();
             if (size % 2 == 0) {
-                median = (temps.get(size/2 - 1) + temps.get(size/2)) / 2.0;
+                median = (temps.get(size / 2 - 1) + temps.get(size / 2)) / 2.0;
             } else {
-                median = temps.get(size/2);
+                median = temps.get(size / 2);
             }
 
-            statsList.add(
-                    new MonthlyStats(month, min, max, median)
-            );
+            statsList.add(new MonthlyStats(month, min, max, median));
         }
 
         return CommonResponse.builder()
